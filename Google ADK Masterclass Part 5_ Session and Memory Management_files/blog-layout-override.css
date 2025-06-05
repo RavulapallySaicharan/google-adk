@@ -1,0 +1,80 @@
+/* Direct CSS overrides for blog layout - loaded after all other CSS */
+
+/* Force horizontal layout for blog posts */
+.blog article.mxn2.clearfix,
+.blog article.clearfix,
+article.mxn2.clearfix,
+article.clearfix {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+/* Force columns to be side by side */
+.blog .col.sm-col-4,
+article .col.sm-col-4 {
+  float: left !important;
+  width: 33.33333% !important;
+  box-sizing: border-box !important;
+  display: block !important;
+}
+
+.blog .col.sm-col-8,
+article .col.sm-col-8 {
+  float: left !important;
+  width: 66.66667% !important;
+  box-sizing: border-box !important;
+  display: block !important;
+}
+
+/* Fix title wrapping */
+.blog h2.post-title-wrap,
+.blog h2.mt0,
+article h2.post-title-wrap,
+article h2.mt0 {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow-wrap: break-word !important;
+  word-wrap: break-word !important;
+  word-break: normal !important;
+  white-space: normal !important;
+}
+
+/* Mobile-specific fixes */
+@media screen and (max-width: 40em) {
+  .blog .col.sm-col-4,
+  .blog .col.sm-col-8,
+  article .col.sm-col-4,
+  article .col.sm-col-8 {
+    width: 100% !important;
+    float: none !important;
+    padding: 0 !important;
+  }
+  
+  .blog .col.sm-col-4,
+  article .col.sm-col-4 {
+    margin-bottom: 1rem !important;
+  }
+}
+
+/* Fix for dark mode text readability */
+[data-theme="dark"] .blog article p,
+[data-theme="dark"] .blog article .gray,
+[data-theme="dark"] article p,
+[data-theme="dark"] article .gray {
+  color: #e0e0e0 !important;
+}
+
+/* Ensure links are visible in dark mode */
+[data-theme="dark"] .blog article a,
+[data-theme="dark"] article a {
+  color: #4dabf7 !important;
+}
+
+[data-theme="dark"] .blog article a:hover,
+[data-theme="dark"] article a:hover {
+  color: #74c0fc !important;
+}
