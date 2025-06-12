@@ -2,18 +2,23 @@ import os
 import asyncio
 import uuid
 from dotenv import load_dotenv
-from google.adk.orchestration import Runner
-from google.adk.orchestration.session import DatabaseSessionService
+from google.adk.runners import Runner
+from google.adk.sessions import DatabaseSessionService
+from google.adk.artifacts import InMemoryArtifactService
+from google.adk.memory import InMemoryMemoryService
+from google.genai import types
 from agent.memory_agent import memory_agent
 
 # Load environment variables
 load_dotenv()
 
 async def main():
-    # Create a database session service
+    # Create services
     session_service = DatabaseSessionService(
-        database_url=os.getenv("DATABASE_URL", "sqlite:///agent_sessions.db")
+        db_url=os.getenv("DATABASE_URL", "sqlite:///agent_sessions.db")
     )
+    artifact_service = InMemoryArtifactService()
+    memory_service = InMemoryMemoryService()
 
     # Define initial state for new sessions
     initial_state = {
@@ -26,19 +31,19 @@ async def main():
     user_id = "example_user"
 
     # Check if we have an existing session for this user
-    existing_sessions = session_service.list_sessions(
+    existing_sessions = await session_service.list_sessions(
         app_name=app_name,
         user_id=user_id
     )
 
-    if existing_sessions and len(existing_sessions) > 0:
+    if existing_sessions.sessions and len(existing_sessions.sessions) > 0:
         # Use the existing session
-        session_id = existing_sessions[0].id
+        session_id = existing_sessions.sessions[0].id
         print(f"Continuing existing session: {session_id}")
     else:
         # Create a new session
         session_id = str(uuid.uuid4())
-        session_service.create_session(
+        await session_service.create_session(
             app_name=app_name,
             user_id=user_id,
             session_id=session_id,
@@ -46,10 +51,13 @@ async def main():
         )
         print(f"Created new session: {session_id}")
 
-    # Create a runner with our agent and session service
+    # Create a runner with our agent and services
     runner = Runner(
-        root_agent=memory_agent,
-        session_service=session_service
+        app_name=app_name,
+        agent=memory_agent,
+        session_service=session_service,
+        artifact_service=artifact_service,
+        memory_service=memory_service
     )
 
     # Interactive chat loop
@@ -62,17 +70,23 @@ async def main():
             print("Goodbye! Your reminders have been saved.")
             break
 
-        # Process the user input
-        response = await runner.run_async(
-            user_id=user_id,
-            session_id=session_id,
-            content=user_input
+        # Create a Content object for the user input
+        user_message = types.Content(
+            role="user",
+            parts=[types.Part(text=user_input)]
         )
 
-        # Print the agent's response
-        for event in response.events:
-            if event.type == "content" and event.content.role == "agent":
+        # Process the user input
+        async for event in runner.run_async(
+            user_id=user_id,
+            session_id=session_id,
+            new_message=user_message
+        ):
+            if event.content and event.content.role == "agent":
                 print(f"\nAgent: {event.content.parts[0].text}")
+
+    # Clean up the runner
+    await runner.close()
 
 if __name__ == "__main__":
     asyncio.run(main()) 

@@ -1,13 +1,11 @@
-from typing import Dict, List, Optional
 from google.adk import Agent
-from google.adk.tool import FunctionTool
+from google.adk.tools import FunctionTool
 from google.adk.models.lite_llm import LiteLlm
-import os
-import litellm
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
 
 def add_reminder(reminder_text: str, tool_context) -> dict:
     """
@@ -91,36 +89,30 @@ def update_username(new_name: str, tool_context) -> dict:
         "message": f"Updated username from '{old_name}' to '{new_name}'"
     }
 
-# Configure LiteLLM for Azure OpenAI
-litellm.set_verbose = True
+# # Configure LiteLLM for Azure OpenAI
+# litellm.set_verbose = True
 
-# Create a custom model configuration for Azure OpenAI
-azure_model_config = {
-    "model": f"azure/{os.getenv('AZURE_DEPLOYMENT_NAME')}",
-    "api_base": os.getenv("AZURE_API_BASE"),
-    "api_version": os.getenv("AZURE_API_VERSION"),
-    "api_key": os.getenv("AZURE_API_KEY"),
-    "api_type": "azure"
-}
+# # Create a custom model configuration for Azure OpenAI
+# azure_model_config = {
+#     "model": f"azure/{os.getenv('AZURE_DEPLOYMENT_NAME')}",
+#     "api_base": os.getenv("AZURE_API_BASE"),
+#     "api_version": os.getenv("AZURE_API_VERSION"),
+#     "api_key": os.getenv("AZURE_API_KEY"),
+#     "api_type": "azure"
+# }
 
-# Register the Azure model with LiteLLM
-litellm.register_model(
-    model_name=os.getenv("MODEL_NAME"),
-    litellm_params=azure_model_config
-)
+# # Register the Azure model with LiteLLM
+# litellm.register_model(
+#     model_name=os.getenv("MODEL_NAME"),
+#     litellm_params=azure_model_config
+# )
 
 # Create the memory agent with LiteLLM integration
 memory_agent = Agent(
-    name=os.getenv("AGENT_NAME", "memory_agent"),
-    model=LiteLlm(model=os.getenv("MODEL_NAME")),  # Use LiteLLM model wrapper
-    model_kwargs={
-        "api_base": os.getenv("AZURE_API_BASE"),
-        "api_version": os.getenv("AZURE_API_VERSION"),
-        "api_key": os.getenv("AZURE_API_KEY"),
-        "api_type": "azure"
-    },
+    name="memory_agent",
+    model=LiteLlm(model="openai/gpt-4.1"),
     description="A reminder assistant that remembers user reminders",
-    instructions="""
+    instruction="""
     You are a friendly reminder assistant. You help users manage their reminders and remember important tasks.
     You are working with the following shared state information:
     - The user's name is: {username}
