@@ -6,10 +6,27 @@ from google.adk.agents import LlmAgent
 
 
 
-greeter = LlmAgent(name='Greeter', model=LiteLlm(model='openai/gpt-4.1'))
-task_executor = LlmAgent(name='TaskExecutor', model=LiteLlm(model='openai/gpt-4.1'))
-result_validator = LlmAgent(name='ResultValidator', model=LiteLlm(model='openai/gpt-4.1'))
+greeter = LlmAgent(
+    name='greeter',
+    model=LiteLlm(model='openai/gpt-4.1')
+)
+task_executor = LlmAgent(
+    name='task_executor',
+    model=LiteLlm(model='openai/gpt-4.1')
+)
+result_validator = LlmAgent(
+    name='result_validator',
+    model=LiteLlm(model='openai/gpt-4.1')
+)
 
 
 
-task coordinator = name='task_coordinator' description='Coordinates multiple agents to complete complex tasks' parent_agent=None sub_agents=[LlmAgent(name='greeter', description='', parent_agent=LlmAgent(name='task_coordinator', description='Coordinates multiple agents to complete complex tasks', parent_agent=None, sub_agents=[...], before_agent_callback=None, after_agent_callback=None, model=LiteLlm(model='openai/gpt-4.1', llm_client=<google.adk.models.lite_llm.LiteLLMClient object at 0x000001693754A0F0>), instruction='', global_instruction='', tools=[], generate_content_config=None, disallow_transfer_to_parent=False, disallow_transfer_to_peers=False, include_contents='default', input_schema=None, output_schema=None, output_key=None, planner=None, code_executor=None, examples=None, before_model_callback=None, after_model_callback=None, before_tool_callback=None, after_tool_callback=None), sub_agents=[], before_agent_callback=None, after_agent_callback=None, model=LiteLlm(model='openai/gpt-4.1', llm_client=<google.adk.models.lite_llm.LiteLLMClient object at 0x000001693758C2D0>), instruction='', global_instruction='', tools=[], generate_content_config=None, disallow_transfer_to_parent=False, disallow_transfer_to_peers=False, include_contents='default', input_schema=None, output_schema=None, output_key=None, planner=None, code_executor=None, examples=None, before_model_callback=None, after_model_callback=None, before_tool_callback=None, after_tool_callback=None), LlmAgent(name='task_executor', description='', parent_agent=LlmAgent(name='task_coordinator', description='Coordinates multiple agents to complete complex tasks', parent_agent=None, sub_agents=[...], before_agent_callback=None, after_agent_callback=None, model=LiteLlm(model='openai/gpt-4.1', llm_client=<google.adk.models.lite_llm.LiteLLMClient object at 0x000001693754A0F0>), instruction='', global_instruction='', tools=[], generate_content_config=None, disallow_transfer_to_parent=False, disallow_transfer_to_peers=False, include_contents='default', input_schema=None, output_schema=None, output_key=None, planner=None, code_executor=None, examples=None, before_model_callback=None, after_model_callback=None, before_tool_callback=None, after_tool_callback=None), sub_agents=[], before_agent_callback=None, after_agent_callback=None, model=LiteLlm(model='openai/gpt-4.1', llm_client=<google.adk.models.lite_llm.LiteLLMClient object at 0x00000169313AF490>), instruction='', global_instruction='', tools=[], generate_content_config=None, disallow_transfer_to_parent=False, disallow_transfer_to_peers=False, include_contents='default', input_schema=None, output_schema=None, output_key=None, planner=None, code_executor=None, examples=None, before_model_callback=None, after_model_callback=None, before_tool_callback=None, after_tool_callback=None), LlmAgent(name='result_validator', description='', parent_agent=LlmAgent(name='task_coordinator', description='Coordinates multiple agents to complete complex tasks', parent_agent=None, sub_agents=[...], before_agent_callback=None, after_agent_callback=None, model=LiteLlm(model='openai/gpt-4.1', llm_client=<google.adk.models.lite_llm.LiteLLMClient object at 0x000001693754A0F0>), instruction='', global_instruction='', tools=[], generate_content_config=None, disallow_transfer_to_parent=False, disallow_transfer_to_peers=False, include_contents='default', input_schema=None, output_schema=None, output_key=None, planner=None, code_executor=None, examples=None, before_model_callback=None, after_model_callback=None, before_tool_callback=None, after_tool_callback=None), sub_agents=[], before_agent_callback=None, after_agent_callback=None, model=LiteLlm(model='openai/gpt-4.1', llm_client=<google.adk.models.lite_llm.LiteLLMClient object at 0x00000169313AFA80>), instruction='', global_instruction='', tools=[], generate_content_config=None, disallow_transfer_to_parent=False, disallow_transfer_to_peers=False, include_contents='default', input_schema=None, output_schema=None, output_key=None, planner=None, code_executor=None, examples=None, before_model_callback=None, after_model_callback=None, before_tool_callback=None, after_tool_callback=None)] before_agent_callback=None after_agent_callback=None model=LiteLlm(model='openai/gpt-4.1', llm_client=<google.adk.models.lite_llm.LiteLLMClient object at 0x000001693754A0F0>) instruction='' global_instruction='' tools=[] generate_content_config=None disallow_transfer_to_parent=False disallow_transfer_to_peers=False include_contents='default' input_schema=None output_schema=None output_key=None planner=None code_executor=None examples=None before_model_callback=None after_model_callback=None before_tool_callback=None after_tool_callback=None
+task_coordinator = Agent(
+    name='task_coordinator',
+    model=LiteLlm(model='openai/gpt-4.1'),
+    description='Coordinates multiple agents to complete complex tasks',
+    instruction='Manage and coordinate sub-agents to complete tasks efficiently'
+
+,
+    sub_agents=[greeter, task_executor, result_validator]
+)

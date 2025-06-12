@@ -176,10 +176,17 @@ def call_agent(inputs: Dict[str, Any]) -> str:
 '''}
 
 {'' if sub_agents is None else f'''
-{"".join(f"{to_snake_case(name)} = LlmAgent(name='{name}', model=LiteLlm(model='openai/gpt-4.1'))\n" for name in sub_agents)}
+{"".join(f"{to_snake_case(name)} = LlmAgent(\n    name='{to_snake_case(name)}',\n    model=LiteLlm(model='openai/gpt-4.1')\n)\n" for name in sub_agents)}
 '''}
 
-{agent_name.lower()} = {str(agent)}
+{to_snake_case(agent_name)} = {'Agent' if agent_url is None else 'Agent'}(
+    name='{to_snake_case(agent_name)}',
+    model=LiteLlm(model='openai/gpt-4.1'),
+    description='{agent_description}',
+    instruction='{agent_instruction}'
+{'' if agent_url is None else f',\n    tools=[FunctionTool(call_agent)]'}
+{'' if sub_agents is None else f',\n    sub_agents=[{", ".join(to_snake_case(name) for name in sub_agents)}]'}
+)
 """)
 
 if __name__ == "__main__":

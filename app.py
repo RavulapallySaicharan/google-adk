@@ -4,13 +4,15 @@ from typing import Optional, List, Dict
 import os
 import asyncio
 import uuid
+import importlib
+import pkgutil
+from pathlib import Path
 from dotenv import load_dotenv
 from google.adk.runners import Runner
 from google.adk.sessions import DatabaseSessionService
 from google.adk.artifacts import InMemoryArtifactService
 from google.adk.memory import InMemoryMemoryService
 from google.genai import types
-from agent.memory_agent import memory_agent
 
 # Load environment variables
 load_dotenv()
@@ -24,24 +26,49 @@ session_service = DatabaseSessionService(
 artifact_service = InMemoryArtifactService()
 memory_service = InMemoryMemoryService()
 
+def load_agents():
+    """Dynamically load all agents from the agent directory."""
+    agents = {}
+    agent_dir = Path("agent")
+    
+    if not agent_dir.exists():
+        return agents
+    
+    # Import the agent package
+    import agent
+    
+    # Walk through all subdirectories in the agent directory
+    for _, name, is_pkg in pkgutil.iter_modules([str(agent_dir)]):
+        if is_pkg:
+            try:
+                # Import the agent module
+                module = importlib.import_module(f"agent.{name}.agent")
+                # Get the agent instance (assuming it's named after the directory)
+                agent_instance = getattr(module, name.replace("-", "_"))
+                agents[name] = agent_instance
+            except (ImportError, AttributeError) as e:
+                print(f"Error loading agent {name}: {str(e)}")
+                continue
+    
+    return agents
+
+# Load all available agents
+AVAILABLE_AGENTS = load_agents()
+
 # Define initial state for new sessions
 initial_state = {
     "username": "User",
     "reminders": []
 }
 
-# Define discoverable agents
+# Define discoverable agents based on loaded agents
 DISCOVERABLE_AGENTS = {
-    "ReminderApp": {
-        "name": "ReminderApp",
-        "description": "A reminder assistant that helps manage your tasks and reminders",
-        "capabilities": [
-            "Add reminders",
-            "View reminders",
-            "Delete reminders",
-            "Update username"
-        ]
+    name: {
+        "name": agent.name,
+        "description": agent.description,
+        "capabilities": agent.instruction.split("\n") if agent.instruction else []
     }
+    for name, agent in AVAILABLE_AGENTS.items()
 }
 
 class AgentRequest(BaseModel):
@@ -91,10 +118,15 @@ async def ask_agent(request: AgentRequest):
         # Get or create session automatically
         session_id = await get_or_create_session(request.user_id, request.app_name)
 
+        # Get the requested agent
+        agent = AVAILABLE_AGENTS.get(request.app_name)
+        if not agent:
+            raise HTTPException(status_code=404, detail=f"Agent {request.app_name} not found")
+
         # Create a runner with our agent and services
         runner = Runner(
             app_name=request.app_name,
-            agent=memory_agent,
+            agent=agent,
             session_service=session_service,
             artifact_service=artifact_service,
             memory_service=memory_service
