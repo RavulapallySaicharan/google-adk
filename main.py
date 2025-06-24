@@ -11,7 +11,6 @@ from agent.memory_agent import memory_agent
 
 # Load environment variables
 load_dotenv()
-
 async def main():
     # Create services
     session_service = DatabaseSessionService(

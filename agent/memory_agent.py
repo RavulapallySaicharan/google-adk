@@ -89,23 +89,6 @@ def update_username(new_name: str, tool_context) -> dict:
         "message": f"Updated username from '{old_name}' to '{new_name}'"
     }
 
-# # Configure LiteLLM for Azure OpenAI
-# litellm.set_verbose = True
-
-# # Create a custom model configuration for Azure OpenAI
-# azure_model_config = {
-#     "model": f"azure/{os.getenv('AZURE_DEPLOYMENT_NAME')}",
-#     "api_base": os.getenv("AZURE_API_BASE"),
-#     "api_version": os.getenv("AZURE_API_VERSION"),
-#     "api_key": os.getenv("AZURE_API_KEY"),
-#     "api_type": "azure"
-# }
-
-# # Register the Azure model with LiteLLM
-# litellm.register_model(
-#     model_name=os.getenv("MODEL_NAME"),
-#     litellm_params=azure_model_config
-# )
 
 # Create the memory agent with LiteLLM integration
 memory_agent = Agent(
