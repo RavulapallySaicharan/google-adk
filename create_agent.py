@@ -112,6 +112,31 @@ def create_multi_agent(agent_name: str, agent_description: str, agent_instructio
         sub_agents=sub_agent_instances
     )
 
+def parse_pattern(pattern: str):
+    """Parse the pattern string and return the pattern type and agent structure."""
+    if not pattern or not isinstance(pattern, str):
+        raise ValueError("pattern must be a non-empty string")
+    
+    # Remove whitespace for easier parsing
+    pattern_clean = pattern.replace(' ', '')
+    if '->' in pattern_clean and ',' in pattern_clean:
+        # Hybrid pattern
+        pattern_type = 'hybrid'
+        # Split by '->' first, then by ',' within each segment
+        segments = pattern_clean.split('->')
+        structure = [seg.split(',') for seg in segments]
+    elif '->' in pattern_clean:
+        pattern_type = 'sequential'
+        structure = pattern_clean.split('->')
+    elif ',' in pattern_clean:
+        pattern_type = 'parallel'
+        structure = pattern_clean.split(',')
+    else:
+        # Single agent (treat as sequential with one agent)
+        pattern_type = 'sequential'
+        structure = [pattern_clean]
+    return pattern_type, structure
+
 def create_agent(
     agent_name: str,
     agent_inputs: List[str],
@@ -121,7 +146,8 @@ def create_agent(
     agent_port: int,
     overwrite: bool = True,
     agent_url: Optional[str] = None,
-    sub_agents: Optional[List[str]] = None
+    sub_agents: Optional[List[str]] = None,
+    pattern: Optional[str] = None
 ) -> None:
     """
     Create a Google ADK agent based on the provided parameters.
@@ -136,11 +162,28 @@ def create_agent(
         overwrite: Whether to overwrite existing agent directory
         agent_url: URL for external agent (if applicable)
         sub_agents: List of sub-agent names (if applicable)
+        pattern: Pattern string for multi-agent coordination (if applicable)
     """
     # Validate inputs
     validate_inputs(agent_name, agent_inputs, agent_description, agent_instruction,
                    agent_tags, agent_port, agent_url, sub_agents)
     
+    # Parse pattern if provided
+    pattern_type = None
+    pattern_structure = None
+    if pattern:
+        pattern_type, pattern_structure = parse_pattern(pattern)
+        print(f"Pattern type: {pattern_type}, structure: {pattern_structure}")
+        # If sub_agents is not provided, infer from pattern
+        if sub_agents is None:
+            # Flatten structure to get all agent names
+            if pattern_type == 'hybrid':
+                sub_agents = [agent for group in pattern_structure for agent in group]
+            elif pattern_type == 'sequential':
+                sub_agents = pattern_structure if isinstance(pattern_structure, list) else [pattern_structure]
+            elif pattern_type == 'parallel':
+                sub_agents = pattern_structure if isinstance(pattern_structure, list) else [pattern_structure]
+
     # Create directory structure
     agent_dir = create_agent_directory(agent_name, overwrite)
     
