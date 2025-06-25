@@ -25,7 +25,7 @@ def to_snake_case(name: str) -> str:
     return name
 
 def validate_inputs(agent_name: str, agent_inputs: List[str], agent_description: str,
-                   agent_instruction: str, agent_tags: List[str], agent_port: int,
+                   agent_instruction: str, agent_tags: List[str],
                    agent_url: Optional[str], sub_agents: Optional[List[str]]) -> None:
     """Validate all input parameters."""
     if not agent_name or not isinstance(agent_name, str):
@@ -42,9 +42,7 @@ def validate_inputs(agent_name: str, agent_inputs: List[str], agent_description:
     
     if not agent_tags or not isinstance(agent_tags, list):
         raise ValueError("agent_tags must be a non-empty list")
-    
-    if not isinstance(agent_port, int) or agent_port < 1024 or agent_port > 65535:
-        raise ValueError("agent_port must be a valid port number between 1024 and 65535")
+
     
     # Validate agent type specific inputs
     if agent_url is not None and sub_agents is not None:
@@ -144,7 +142,7 @@ def create_agent(
     agent_description: str,
     agent_instruction: str,
     agent_tags: List[str],
-    agent_port: int,
+    agent_flag: Optional[str] = None, # if None then it should be snake_case of agent_name
     overwrite: bool = True,
     agent_url: Optional[str] = None,
     sub_agents: Optional[List[str]] = None,
@@ -159,15 +157,17 @@ def create_agent(
         agent_description: Description of the agent's functionality
         agent_instruction: Instructions for the agent
         agent_tags: List of tags for categorization
-        agent_port: Port number for the agent
+        agent_flag: Flag for the agent
         overwrite: Whether to overwrite existing agent directory
         agent_url: URL for external agent (if applicable)
         sub_agents: List of sub-agent names (if applicable)
         pattern: Pattern string for multi-agent coordination (if applicable)
     """
+    if agent_flag is None:
+        agent_flag = to_snake_case(agent_name)
     # Validate inputs
     validate_inputs(agent_name, agent_inputs, agent_description, agent_instruction,
-                   agent_tags, agent_port, agent_url, sub_agents)
+                   agent_tags, agent_url, sub_agents)
     
     # Parse pattern if provided
     pattern_type = None
@@ -298,7 +298,7 @@ if __name__ == "__main__":
         agent_description="Analyzes text to determine sentiment and emotional tone",
         agent_instruction="Provide accurate sentiment analysis and emotional insights from text",
         agent_tags=["nlp", "sentiment-analysis", "emotion-detection"],
-        agent_port=5013,
+        agent_flag=None
         overwrite=True,
         agent_url=None,
         sub_agents=None
@@ -311,7 +311,7 @@ if __name__ == "__main__":
         agent_description="Calls external API for sentiment analysis",
         agent_instruction="Process text and call external API for sentiment analysis",
         agent_tags=["api", "sentiment", "external"],
-        agent_port=5014,
+        agent_flag=None,
         overwrite=True,
         agent_url="http://external.api/sentiment",
         sub_agents=None
@@ -324,7 +324,7 @@ if __name__ == "__main__":
         agent_description="Coordinates Sentiment Analyzer and External Sentiment API sequentially",
         agent_instruction="First analyze sentiment, then call external API for further analysis.",
         agent_tags=["coordination", "multi-agent", "workflow", "sequential"],
-        agent_port=5015,
+        agent_flag=None,
         overwrite=True,
         sub_agents=["Sentiment Analyzer", "External Sentiment API"],
         pattern="sentiment_analyzer->external_sentiment_api"
@@ -337,7 +337,7 @@ if __name__ == "__main__":
         agent_description="Coordinates Sentiment Analyzer and External Sentiment API in parallel",
         agent_instruction="Analyze sentiment using both internal and external APIs in parallel.",
         agent_tags=["coordination", "multi-agent", "workflow", "parallel"],
-        agent_port=5016,
+        agent_flag=None,
         overwrite=True,
         sub_agents=["Sentiment Analyzer", "External Sentiment API"],
         pattern="sentiment_analyzer, external_sentiment_api"
