@@ -146,7 +146,8 @@ def create_agent(
     overwrite: bool = True,
     agent_url: Optional[str] = None,
     sub_agents: Optional[List[str]] = None,
-    pattern: Optional[str] = None
+    pattern: Optional[str] = None,
+    is_orchestrator: bool = False
 ) -> None:
     """
     Create a Google ADK agent based on the provided parameters.
@@ -162,6 +163,7 @@ def create_agent(
         agent_url: URL for external agent (if applicable)
         sub_agents: List of sub-agent names (if applicable)
         pattern: Pattern string for multi-agent coordination (if applicable)
+        is_orchestrator: Whether the agent is an orchestrator
     """
     if agent_flag is None:
         agent_flag = to_snake_case(agent_name)
@@ -222,6 +224,8 @@ def create_agent(
             lines.append("from google.adk.agents import ParallelAgent")
         else:
             lines.append("from google.adk.agents import LlmAgent")
+    if is_orchestrator:
+        lines.append("from google.adk.tools import AgentTool")
     lines.append("")
     if agent_url is not None:
         lines.append("def call_agent(inputs: Dict[str, Any]) -> str:")
@@ -252,8 +256,12 @@ def create_agent(
     if agent_url is not None:
         lines.append("    ,tools=[FunctionTool(call_agent)]")
     if sub_agents is not None:
-        sub_agents_str = ", ".join(to_snake_case(name) for name in sub_agents)
-        lines.append(f"    ,sub_agents=[{sub_agents_str}]")
+        if is_orchestrator:
+            sub_agents_str = ", ".join(f"AgentTool(agent={to_snake_case(name)})" for name in sub_agents)
+            lines.append(f"    ,tools=[{sub_agents_str}]")
+        else:
+            sub_agents_str = ", ".join(to_snake_case(name) for name in sub_agents)
+            lines.append(f"    ,sub_agents=[{sub_agents_str}]")
     lines.append(")")
     lines.append("")
 
@@ -342,3 +350,16 @@ if __name__ == "__main__":
         sub_agents=["Sentiment Analyzer", "External Sentiment API"],
         pattern="sentiment_analyzer, external_sentiment_api"
     ) 
+
+    # Example 5: Orchestrator Agent
+    create_agent(
+        agent_name="Orchestrator",
+        agent_inputs=["text"],
+        agent_description="Orchestrates the execution of multiple agents",
+        agent_instruction="Manage and coordinate sub-agents to complete tasks efficiently",
+        agent_tags=["coordination", "multi-agent", "workflow", "orchestrator"],
+        agent_flag=None,
+        overwrite=True,
+        sub_agents=["Sentiment Analyzer", "External Sentiment API"],
+        is_orchestrator=True
+    )
