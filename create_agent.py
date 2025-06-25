@@ -26,33 +26,49 @@ def to_snake_case(name: str) -> str:
 
 def validate_inputs(agent_name: str, agent_inputs: List[str], agent_description: str,
                    agent_instruction: str, agent_tags: List[str],
-                   agent_url: Optional[str], sub_agents: Optional[List[str]]) -> None:
-    """Validate all input parameters."""
+                   agent_url: Optional[str], sub_agents: Optional[List[str]],
+                   agent_flag: Optional[str] = None, pattern: Optional[str] = None,
+                   tools: Optional[List[str]] = None, is_orchestrator: bool = False) -> None:
+    """
+    Validate all input parameters.
+    Args:
+        agent_name: Name of the agent (non-empty string)
+        agent_inputs: List of input parameters (non-empty list)
+        agent_description: Description of the agent's functionality (non-empty string)
+        agent_instruction: Instructions for the agent (non-empty string)
+        agent_tags: List of tags for categorization (non-empty list)
+        agent_url: URL for external agent (if applicable, string or None)
+        sub_agents: List of sub-agent names (if applicable, list or None)
+        agent_flag: Flag for the agent (string or None)
+        pattern: Pattern string for multi-agent coordination (string or None)
+        tools: List of tools for the agent (list or None)
+        is_orchestrator: Whether the agent is an orchestrator (bool)
+    """
     if not agent_name or not isinstance(agent_name, str):
         raise ValueError("agent_name must be a non-empty string")
-    
     if not agent_inputs or not isinstance(agent_inputs, list):
         raise ValueError("agent_inputs must be a non-empty list")
-    
     if not agent_description or not isinstance(agent_description, str):
         raise ValueError("agent_description must be a non-empty string")
-    
     if not agent_instruction or not isinstance(agent_instruction, str):
         raise ValueError("agent_instruction must be a non-empty string")
-    
     if not agent_tags or not isinstance(agent_tags, list):
         raise ValueError("agent_tags must be a non-empty list")
-
-    
     # Validate agent type specific inputs
     if agent_url is not None and sub_agents is not None:
         raise ValueError("Cannot specify both agent_url and sub_agents")
-    
     if agent_url is not None and not isinstance(agent_url, str):
         raise ValueError("agent_url must be a string")
-    
     if sub_agents is not None and not isinstance(sub_agents, list):
         raise ValueError("sub_agents must be a list")
+    if agent_flag is not None and not isinstance(agent_flag, str):
+        raise ValueError("agent_flag must be a string if provided")
+    if pattern is not None and not isinstance(pattern, str):
+        raise ValueError("pattern must be a string if provided")
+    if tools is not None and not isinstance(tools, list):
+        raise ValueError("tools must be a list if provided")
+    if not isinstance(is_orchestrator, bool):
+        raise ValueError("is_orchestrator must be a boolean value")
 
 def create_agent_directory(agent_name: str, overwrite: bool) -> Path:
     """Create the agent directory structure."""
@@ -147,6 +163,7 @@ def create_agent(
     agent_url: Optional[str] = None,
     sub_agents: Optional[List[str]] = None,
     pattern: Optional[str] = None,
+    tools: Optional[List[str]] = None,
     is_orchestrator: bool = False
 ) -> None:
     """
@@ -163,13 +180,14 @@ def create_agent(
         agent_url: URL for external agent (if applicable)
         sub_agents: List of sub-agent names (if applicable)
         pattern: Pattern string for multi-agent coordination (if applicable)
+        tools: List of tools for the agent (if applicable)
         is_orchestrator: Whether the agent is an orchestrator
     """
     if agent_flag is None:
         agent_flag = to_snake_case(agent_name)
     # Validate inputs
     validate_inputs(agent_name, agent_inputs, agent_description, agent_instruction,
-                   agent_tags, agent_url, sub_agents)
+                   agent_tags, agent_url, sub_agents, agent_flag, pattern, tools, is_orchestrator)
     
     # Parse pattern if provided
     pattern_type = None
@@ -349,7 +367,7 @@ if __name__ == "__main__":
         overwrite=True,
         sub_agents=["Sentiment Analyzer", "External Sentiment API"],
         pattern="sentiment_analyzer, external_sentiment_api"
-    ) 
+    )
 
     # Example 5: Orchestrator Agent
     create_agent(
