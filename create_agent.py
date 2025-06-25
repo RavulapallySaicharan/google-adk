@@ -6,22 +6,23 @@ import requests
 from google.adk import Agent
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools import FunctionTool
-from google.adk.agents import LlmAgent
+from google.adk.agents import LlmAgent, SequentialAgent, ParallelAgent
 
 def to_snake_case(name: str) -> str:
     """Convert a string to snake_case and ensure it's a valid identifier."""
-    # First convert to snake case
-    snake = re.sub(r'(?<!^)(?=[A-Z])', '_', name).lower()
+    # Replace spaces and hyphens with underscores
+    name = re.sub(r'[\s\-]+', '_', name)
+    # Add underscore before a capital letter that follows a lowercase letter or number
+    name = re.sub(r'(?<=[a-z0-9])([A-Z])', r'_\1', name)
+    # Lowercase everything
+    name = name.lower()
     # Remove any non-alphanumeric characters except underscores
-    snake = re.sub(r'[^a-z0-9_]', '_', snake)
-    # Ensure it starts with a letter or underscore
-    if not snake[0].isalpha() and snake[0] != '_':
-        snake = 'a_' + snake
+    name = re.sub(r'[^a-z0-9_]', '', name)
     # Remove consecutive underscores
-    snake = re.sub(r'_+', '_', snake)
+    name = re.sub(r'_+', '_', name)
     # Remove leading/trailing underscores
-    snake = snake.strip('_')
-    return snake
+    name = name.strip('_')
+    return name
 
 def validate_inputs(agent_name: str, agent_inputs: List[str], agent_description: str,
                    agent_instruction: str, agent_tags: List[str], agent_port: int,
@@ -58,7 +59,7 @@ def validate_inputs(agent_name: str, agent_inputs: List[str], agent_description:
 def create_agent_directory(agent_name: str, overwrite: bool) -> Path:
     """Create the agent directory structure."""
     snake_name = to_snake_case(agent_name)
-    agent_dir = Path("agent") / snake_name
+    agent_dir = Path("agents") / snake_name
     
     if agent_dir.exists() and not overwrite:
         raise FileExistsError(f"Agent directory {agent_dir} already exists and overwrite=False")
@@ -202,35 +203,92 @@ def create_agent(
         agent = create_llm_agent(agent_name, agent_description, agent_instruction)
     
     # Write agent code to file
+    lines = []
+    lines.append("from google.adk import Agent")
+    lines.append("from google.adk.models.lite_llm import LiteLlm")
+    if agent_url is not None:
+        lines.append("from google.adk.tools import FunctionTool")
+        lines.append("import requests")
+        lines.append("from typing import Dict, Any")
+    if sub_agents is not None:
+        # Import each subagent from its module
+        for name in sub_agents:
+            module_name = to_snake_case(name)
+            lines.append(f"from agents.{module_name}.agent import {module_name}")
+        # Import the appropriate agent class for the pattern
+        if pattern_type == 'sequential':
+            lines.append("from google.adk.agents import SequentialAgent")
+        elif pattern_type == 'parallel':
+            lines.append("from google.adk.agents import ParallelAgent")
+        else:
+            lines.append("from google.adk.agents import LlmAgent")
+    lines.append("")
+    if agent_url is not None:
+        lines.append("def call_agent(inputs: Dict[str, Any]) -> str:")
+        lines.append("    try:")
+        lines.append(f"        response = requests.post(\"{agent_url}\", json=inputs)")
+        lines.append("        response.raise_for_status()")
+        lines.append("        return response.json()")
+        lines.append("    except requests.exceptions.RequestException as e:")
+        lines.append("        return f'API call failed: {{str(e)}}'")
+        lines.append("")
+    if sub_agents is not None:
+        for name in sub_agents:
+            snake = to_snake_case(name)
+            lines.append(f"# {snake} is imported above as a subagent instance")
+    # Choose the agent class based on the pattern type
+    if pattern_type == 'sequential':
+        agent_class = 'SequentialAgent'
+    elif pattern_type == 'parallel':
+        agent_class = 'ParallelAgent'
+    else:
+        agent_class = 'Agent'
+    agent_init = f"{to_snake_case(agent_name)} = {agent_class}("
+    lines.append(agent_init)
+    lines.append(f"    name='{to_snake_case(agent_name)}',")
+    lines.append("    model=LiteLlm(model='openai/gpt-4.1'),")
+    lines.append(f"    description='{agent_description}',")
+    lines.append(f"    instruction='{agent_instruction}'")
+    if agent_url is not None:
+        lines.append("    ,tools=[FunctionTool(call_agent)]")
+    if sub_agents is not None:
+        sub_agents_str = ", ".join(to_snake_case(name) for name in sub_agents)
+        lines.append(f"    ,sub_agents=[{sub_agents_str}]")
+    lines.append(")")
+    lines.append("")
+
+    # Remove the previous __main__ block if present
+    # Add ADK runner code for running the agent with a sample message
+    lines.append("if __name__ == '__main__':")
+    lines.append("    import os")
+    lines.append("    import asyncio")
+    lines.append("    import uuid")
+    lines.append("    from dotenv import load_dotenv")
+    lines.append("    from google.adk.runners import Runner")
+    lines.append("    from google.adk.sessions import DatabaseSessionService")
+    lines.append("    from google.adk.artifacts import InMemoryArtifactService")
+    lines.append("    from google.adk.memory import InMemoryMemoryService")
+    lines.append("    from google.genai import types")
+    lines.append("    load_dotenv()")
+    lines.append("    async def main():")
+    lines.append("        session_service = DatabaseSessionService(db_url=os.getenv('DATABASE_URL', 'sqlite:///agent_sessions.db'))")
+    lines.append("        artifact_service = InMemoryArtifactService()")
+    lines.append("        memory_service = InMemoryMemoryService()")
+    lines.append("        initial_state = {}  # You can customize initial state if needed")
+    lines.append("        app_name = 'SampleApp'")
+    lines.append("        user_id = 'example_user'")
+    lines.append("        session_id = str(uuid.uuid4())")
+    lines.append("        await session_service.create_session(app_name=app_name, user_id=user_id, session_id=session_id, state=initial_state)")
+    lines.append(f"        runner = Runner(app_name=app_name, agent={to_snake_case(agent_name)}, session_service=session_service, artifact_service=artifact_service, memory_service=memory_service)")
+    lines.append("        user_message = types.Content(role='user', parts=[types.Part(text='Hello, world!')])")
+    lines.append("        async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=user_message):")
+    lines.append("            if event.content and event.content.role == 'agent':")
+    lines.append("                print(f'Agent: {event.content.parts[0].text}')")
+    lines.append("        await runner.close()")
+    lines.append("    asyncio.run(main())")
+
     with open(agent_file, "w") as f:
-        f.write(f"""from google.adk import Agent
-from google.adk.models.lite_llm import LiteLlm
-{'' if agent_url is None else 'from google.adk.tools import FunctionTool\nimport requests\nfrom typing import Dict, Any'}
-{'' if sub_agents is None else 'from google.adk.agents import LlmAgent'}
-
-{'' if agent_url is None else f'''
-def call_agent(inputs: Dict[str, Any]) -> str:
-    try:
-        response = requests.post("{agent_url}", json=inputs)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        return f"API call failed: {{str(e)}}"
-'''}
-
-{'' if sub_agents is None else f'''
-{"".join(f"{to_snake_case(name)} = LlmAgent(\n    name='{to_snake_case(name)}',\n    model=LiteLlm(model='openai/gpt-4.1')\n)\n" for name in sub_agents)}
-'''}
-
-{to_snake_case(agent_name)} = {'Agent' if agent_url is None else 'Agent'}(
-    name='{to_snake_case(agent_name)}',
-    model=LiteLlm(model='openai/gpt-4.1'),
-    description='{agent_description}',
-    instruction='{agent_instruction}'
-{'' if agent_url is None else f',\n    tools=[FunctionTool(call_agent)]'}
-{'' if sub_agents is None else f',\n    sub_agents=[{", ".join(to_snake_case(name) for name in sub_agents)}]'}
-)
-""")
+        f.write("\n".join(lines))
 
 if __name__ == "__main__":
     # Example 1: LLM Agent
@@ -259,15 +317,28 @@ if __name__ == "__main__":
         sub_agents=None
     )
 
-    # Example 3: Multi-Agent
+    # Example 3: Multi-Agent Sequential (uses Example 1 and 2 as subagents)
     create_agent(
-        agent_name="Task Coordinator",
-        agent_inputs=["task", "context"],
-        agent_description="Coordinates multiple agents to complete complex tasks",
-        agent_instruction="Manage and coordinate sub-agents to complete tasks efficiently",
-        agent_tags=["coordination", "multi-agent", "workflow"],
+        agent_name="Task Coordinator Sequential",
+        agent_inputs=["text"],
+        agent_description="Coordinates Sentiment Analyzer and External Sentiment API sequentially",
+        agent_instruction="First analyze sentiment, then call external API for further analysis.",
+        agent_tags=["coordination", "multi-agent", "workflow", "sequential"],
         agent_port=5015,
         overwrite=True,
-        agent_url=None,
-        sub_agents=["Greeter", "TaskExecutor", "ResultValidator"]
+        sub_agents=["Sentiment Analyzer", "External Sentiment API"],
+        pattern="sentiment_analyzer->external_sentiment_api"
+    )
+
+    # Example 4: Multi-Agent Parallel (uses Example 1 and 2 as subagents)
+    create_agent(
+        agent_name="Task Coordinator Parallel",
+        agent_inputs=["text"],
+        agent_description="Coordinates Sentiment Analyzer and External Sentiment API in parallel",
+        agent_instruction="Analyze sentiment using both internal and external APIs in parallel.",
+        agent_tags=["coordination", "multi-agent", "workflow", "parallel"],
+        agent_port=5016,
+        overwrite=True,
+        sub_agents=["Sentiment Analyzer", "External Sentiment API"],
+        pattern="sentiment_analyzer, external_sentiment_api"
     ) 
