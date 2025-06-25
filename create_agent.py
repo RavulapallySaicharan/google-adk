@@ -230,11 +230,15 @@ def create_agent(
         lines.append("from google.adk.tools import FunctionTool")
         lines.append("import requests")
         lines.append("from typing import Dict, Any")
+    pattern_type = None
+    if pattern:
+        pattern_type, _ = parse_pattern(pattern)
     if sub_agents is not None:
-        # Import each subagent from its module
+        # Import each subagent's factory function from its module
         for name in sub_agents:
             module_name = to_snake_case(name)
-            lines.append(f"from agents.{module_name}.agent import {module_name}")
+            factory_name = f"create_{module_name}"
+            lines.append(f"from agents.{module_name}.agent import {factory_name}")
         # Import the appropriate agent class for the pattern
         if pattern_type == 'sequential':
             lines.append("from google.adk.agents import SequentialAgent")
@@ -242,8 +246,6 @@ def create_agent(
             lines.append("from google.adk.agents import ParallelAgent")
         else:
             lines.append("from google.adk.agents import LlmAgent")
-    if is_orchestrator:
-        lines.append("from google.adk.tools import AgentTool")
     lines.append("")
     if agent_url is not None:
         lines.append("def call_agent(inputs: Dict[str, Any]) -> str:")
@@ -254,10 +256,10 @@ def create_agent(
         lines.append("    except requests.exceptions.RequestException as e:")
         lines.append("        return f'API call failed: {{str(e)}}'")
         lines.append("")
-    if sub_agents is not None:
-        for name in sub_agents:
-            snake = to_snake_case(name)
-            lines.append(f"# {snake} is imported above as a subagent instance")
+    # Factory function for this agent
+    factory_name = f"create_{to_snake_case(agent_name)}"
+    lines.append(f"def {factory_name}():")
+    lines.append(f"    \"\"\"Factory function to create a new instance of {to_snake_case(agent_name)} agent.\"\"\"")
     # Choose the agent class based on the pattern type
     if pattern_type == 'sequential':
         agent_class = 'SequentialAgent'
@@ -265,26 +267,23 @@ def create_agent(
         agent_class = 'ParallelAgent'
     else:
         agent_class = 'Agent'
-    agent_init = f"{to_snake_case(agent_name)} = {agent_class}("
-    lines.append(agent_init)
-    lines.append(f"    name='{to_snake_case(agent_name)}',")
-    lines.append("    model=LiteLlm(model='openai/gpt-4.1'),")
-    lines.append(f"    description='{agent_description}',")
-    lines.append(f"    instruction='{agent_instruction}'")
+    lines.append(f"    return {agent_class}(")
+    lines.append(f"        name='{to_snake_case(agent_name)}',")
+    lines.append("        model=LiteLlm(model='openai/gpt-4.1'),")
+    lines.append(f"        description='{agent_description}',")
+    lines.append(f"        instruction='{agent_instruction}'")
     if agent_url is not None:
-        lines.append("    ,tools=[FunctionTool(call_agent)]")
+        lines.append("        ,tools=[FunctionTool(call_agent)]")
     if sub_agents is not None:
         if is_orchestrator:
-            sub_agents_str = ", ".join(f"AgentTool(agent={to_snake_case(name)})" for name in sub_agents)
-            lines.append(f"    ,tools=[{sub_agents_str}]")
+            sub_agents_str = ", ".join(f"AgentTool(agent={f'create_{to_snake_case(name)}()'})" for name in sub_agents)
+            lines.append(f"        ,tools=[{sub_agents_str}]")
         else:
-            sub_agents_str = ", ".join(to_snake_case(name) for name in sub_agents)
-            lines.append(f"    ,sub_agents=[{sub_agents_str}]")
-    lines.append(")")
+            sub_agents_str = ", ".join(f"{f'create_{to_snake_case(name)}()'}" for name in sub_agents)
+            lines.append(f"        ,sub_agents=[{sub_agents_str}]")
+    lines.append("    )")
     lines.append("")
-
-    # Remove the previous __main__ block if present
-    # Add ADK runner code for running the agent with a sample message
+    # Only add __main__ runner for leaf agents (not orchestrators)
     lines.append("if __name__ == '__main__':")
     lines.append("    import os")
     lines.append("    import asyncio")
@@ -305,7 +304,7 @@ def create_agent(
     lines.append("        user_id = 'example_user'")
     lines.append("        session_id = str(uuid.uuid4())")
     lines.append("        await session_service.create_session(app_name=app_name, user_id=user_id, session_id=session_id, state=initial_state)")
-    lines.append(f"        runner = Runner(app_name=app_name, agent={to_snake_case(agent_name)}, session_service=session_service, artifact_service=artifact_service, memory_service=memory_service)")
+    lines.append(f"        runner = Runner(app_name=app_name, agent={factory_name}(), session_service=session_service, artifact_service=artifact_service, memory_service=memory_service)")
     lines.append("        user_message = types.Content(role='user', parts=[types.Part(text='Hello, world!')])")
     lines.append("        async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=user_message):")
     lines.append("            if event.content and event.content.role == 'agent':")
@@ -324,7 +323,7 @@ if __name__ == "__main__":
         agent_description="Analyzes text to determine sentiment and emotional tone",
         agent_instruction="Provide accurate sentiment analysis and emotional insights from text",
         agent_tags=["nlp", "sentiment-analysis", "emotion-detection"],
-        agent_flag=None
+        agent_flag=None,
         overwrite=True,
         agent_url=None,
         sub_agents=None
