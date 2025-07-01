@@ -7,6 +7,7 @@ from google.adk import Agent
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools import FunctionTool
 from google.adk.agents import LlmAgent, SequentialAgent, ParallelAgent
+from itertools import count
 
 def to_snake_case(name: str) -> str:
     """Convert a string to snake_case and ensure it's a valid identifier."""
@@ -152,6 +153,89 @@ def parse_pattern(pattern: str):
         structure = [pattern_clean]
     return pattern_type, structure
 
+def parse_pattern_recursive(pattern: str):
+    """Recursively parse a hybrid pattern string into a nested structure."""
+    pattern = pattern.replace(' ', '')
+    def helper(s, idx=0):
+        result = []
+        token = ''
+        while idx < len(s):
+            if s[idx] == '(':
+                group, idx = helper(s, idx + 1)
+                result.append(group)
+            elif s[idx] == ')':
+                if token:
+                    result.append(token)
+                    token = ''
+                return result, idx + 1
+            elif s[idx] == ',':
+                if token:
+                    result.append(token)
+                    token = ''
+                idx += 1
+            elif s[idx:idx+2] == '->':
+                if token:
+                    result.append(token)
+                    token = ''
+                result.append('->')
+                idx += 2
+            else:
+                token += s[idx]
+                idx += 1
+        if token:
+            result.append(token)
+        return result, idx
+    parsed, _ = helper(pattern)
+    return parsed
+
+def build_agent_from_pattern(parsed, agent_inputs, agent_description, agent_instruction, agent_tags, overwrite, temp_counter, parent_type=None):
+    """
+    Recursively build agents from the parsed pattern.
+    Returns the name of the top-level agent and a list of all temp agent definitions (tuples of (name, type, subagents)).
+    """
+    temp_agents = []
+    if isinstance(parsed, str):
+        return parsed, temp_agents
+    # If it's a list, check for '->' to determine sequential/parallel
+    if '->' in parsed:
+        # Sequential: split by '->', recursively build each part
+        parts = []
+        current = []
+        for item in parsed:
+            if item == '->':
+                if current:
+                    parts.append(current)
+                    current = []
+            else:
+                current.append(item)
+        if current:
+            parts.append(current)
+        subagent_names = []
+        for part in parts:
+            # If part is a single string, pass as is
+            if len(part) == 1 and isinstance(part[0], str):
+                sub_name, sub_temps = build_agent_from_pattern(part[0], agent_inputs, agent_description, agent_instruction, agent_tags, overwrite, temp_counter, parent_type='sequential')
+            else:
+                sub_name, sub_temps = build_agent_from_pattern(part, agent_inputs, agent_description, agent_instruction, agent_tags, overwrite, temp_counter, parent_type='sequential')
+            subagent_names.append(sub_name)
+            temp_agents.extend(sub_temps)
+        temp_name = f"_tmp_seq{next(temp_counter)}"
+        temp_agents.append((temp_name, 'sequential', subagent_names))
+        return temp_name, temp_agents
+    else:
+        # Parallel: each item is a subagent or group
+        subagent_names = []
+        for item in parsed:
+            if isinstance(item, str):
+                sub_name, sub_temps = build_agent_from_pattern(item, agent_inputs, agent_description, agent_instruction, agent_tags, overwrite, temp_counter, parent_type='parallel')
+            else:
+                sub_name, sub_temps = build_agent_from_pattern(item, agent_inputs, agent_description, agent_instruction, agent_tags, overwrite, temp_counter, parent_type='parallel')
+            subagent_names.append(sub_name)
+            temp_agents.extend(sub_temps)
+        temp_name = f"_tmp_par{next(temp_counter)}"
+        temp_agents.append((temp_name, 'parallel', subagent_names))
+        return temp_name, temp_agents
+
 def create_agent(
     agent_name: str,
     agent_inputs: List[str],
@@ -189,22 +273,102 @@ def create_agent(
     validate_inputs(agent_name, agent_inputs, agent_description, agent_instruction,
                    agent_tags, agent_url, sub_agents, agent_flag, pattern, tools, is_orchestrator)
     
-    # Parse pattern if provided
-    pattern_type = None
-    pattern_structure = None
+    # Hybrid pattern support
     if pattern:
-        pattern_type, pattern_structure = parse_pattern(pattern)
-        print(f"Pattern type: {pattern_type}, structure: {pattern_structure}")
-        # If sub_agents is not provided, infer from pattern
-        if sub_agents is None:
-            # Flatten structure to get all agent names
-            if pattern_type == 'hybrid':
-                sub_agents = [agent for group in pattern_structure for agent in group]
-            elif pattern_type == 'sequential':
-                sub_agents = pattern_structure if isinstance(pattern_structure, list) else [pattern_structure]
-            elif pattern_type == 'parallel':
-                sub_agents = pattern_structure if isinstance(pattern_structure, list) else [pattern_structure]
-
+        pattern_type, _ = parse_pattern(pattern)
+        if pattern_type == 'hybrid':
+            # Recursively parse and build temp agents
+            parsed = parse_pattern_recursive(pattern)
+            temp_counter = count(1)
+            top_agent, temp_agents = build_agent_from_pattern(parsed, agent_inputs, agent_description, agent_instruction, agent_tags, overwrite, temp_counter)
+            # Instead of creating files for temp agents, collect their definitions to be written in the top-level agent.py
+            temp_agent_defs = []
+            for temp_name, temp_type, temp_subs in temp_agents:
+                temp_desc = f"Temporary {temp_type} agent for hybrid pattern"
+                temp_instr = f"Auto-generated {temp_type} agent for hybrid pattern"
+                temp_tag = ["hybrid-temp"]
+                # Generate the factory function for the temp agent as a string
+                sub_factories = ', '.join([f"create_{to_snake_case(sub)}()" for sub in temp_subs])
+                if temp_type == 'sequential':
+                    agent_class = 'SequentialAgent'
+                else:
+                    agent_class = 'ParallelAgent'
+                temp_factory = f"def create_{to_snake_case(temp_name)}():\n" \
+                              f"    \"\"\"Factory for {temp_name}\"\"\"\n" \
+                              f"    return {agent_class}(\n" \
+                              f"        name='{to_snake_case(temp_name)}',\n" \
+                              f"        model=LiteLlm(model='openai/gpt-4.1'),\n" \
+                              f"        description='{temp_desc}',\n" \
+                              f"        instruction='{temp_instr}',\n" \
+                              f"        sub_agents=[{sub_factories}]\n" \
+                              f"    )\n"
+                temp_agent_defs.append(temp_factory)
+            # Now, set up the final agent to use the top_agent and any trailing agents (if top_agent is not the final agent_name)
+            if top_agent != agent_name:
+                sub_agents = [top_agent]
+            else:
+                sub_agents = None
+            # Create directory structure
+            agent_dir = create_agent_directory(agent_name, overwrite)
+            # Create __init__.py
+            init_file = agent_dir / "__init__.py"
+            init_file.touch()
+            # Create agent.py with all temp agent factories and the top-level agent
+            agent_file = agent_dir / "agent.py"
+            lines = []
+            lines.append("from google.adk import Agent")
+            lines.append("from google.adk.models.lite_llm import LiteLlm")
+            lines.append("from google.adk.agents import SequentialAgent, ParallelAgent")
+            lines.append("")
+            # Write all temp agent factories
+            for temp_factory in temp_agent_defs:
+                lines.append(temp_factory)
+                lines.append("")
+            # Write the top-level agent factory
+            factory_name = f"create_{to_snake_case(agent_name)}"
+            lines.append(f"def {factory_name}():")
+            lines.append(f"    \"\"\"Factory function to create a new instance of {to_snake_case(agent_name)} agent.\"\"\"")
+            lines.append(f"    return SequentialAgent(")
+            lines.append(f"        name='{to_snake_case(agent_name)}',")
+            lines.append("        model=LiteLlm(model='openai/gpt-4.1'),")
+            lines.append(f"        description='{agent_description}',")
+            lines.append(f"        instruction='{agent_instruction}',")
+            if sub_agents:
+                sub_factories = ', '.join([f"create_{to_snake_case(sub)}()" for sub in sub_agents])
+                lines.append(f"        sub_agents=[{sub_factories}]")
+            lines.append("    )")
+            lines.append("")
+            # Only add __main__ runner for leaf agents (not orchestrators)
+            lines.append("if __name__ == '__main__':")
+            lines.append("    import os")
+            lines.append("    import asyncio")
+            lines.append("    import uuid")
+            lines.append("    from dotenv import load_dotenv")
+            lines.append("    from google.adk.runners import Runner")
+            lines.append("    from google.adk.sessions import DatabaseSessionService")
+            lines.append("    from google.adk.artifacts import InMemoryArtifactService")
+            lines.append("    from google.adk.memory import InMemoryMemoryService")
+            lines.append("    from google.genai import types")
+            lines.append("    load_dotenv()")
+            lines.append("    async def main():")
+            lines.append("        session_service = DatabaseSessionService(db_url=os.getenv('DATABASE_URL', 'sqlite:///agent_sessions.db'))")
+            lines.append("        artifact_service = InMemoryArtifactService()")
+            lines.append("        memory_service = InMemoryMemoryService()")
+            lines.append("        initial_state = {}  # You can customize initial state if needed")
+            lines.append("        app_name = 'SampleApp'")
+            lines.append("        user_id = 'example_user'")
+            lines.append("        session_id = str(uuid.uuid4())")
+            lines.append("        await session_service.create_session(app_name=app_name, user_id=user_id, session_id=session_id, state=initial_state)")
+            lines.append(f"        runner = Runner(app_name=app_name, agent={factory_name}(), session_service=session_service, artifact_service=artifact_service, memory_service=memory_service)")
+            lines.append("        user_message = types.Content(role='user', parts=[types.Part(text='Hello, world!')])")
+            lines.append("        async for event in runner.run_async(user_id=user_id, session_id=session_id, new_message=user_message):")
+            lines.append("            if event.content and event.content.role == 'agent':")
+            lines.append("                print(f'Agent: {event.content.parts[0].text}')")
+            lines.append("        await runner.close()")
+            lines.append("    asyncio.run(main())")
+            with open(agent_file, "w") as f:
+                f.write("\n".join(lines))
+            return
     # Create directory structure
     agent_dir = create_agent_directory(agent_name, overwrite)
     
@@ -316,6 +480,9 @@ def create_agent(
         f.write("\n".join(lines))
 
 if __name__ == "__main__":
+    from datetime import datetime
+    
+    start_time = datetime.now()
     # Example 1: LLM Agent
     create_agent(
         agent_name="Sentiment Analyzer",
@@ -328,7 +495,9 @@ if __name__ == "__main__":
         agent_url=None,
         sub_agents=None
     )
-
+    end_time = datetime.now()
+    print(f"Time taken for Example 1: {end_time - start_time}")
+    start_time = datetime.now()
     # Example 2: External Agent
     create_agent(
         agent_name="External Sentiment API",
@@ -341,7 +510,9 @@ if __name__ == "__main__":
         agent_url="http://external.api/sentiment",
         sub_agents=None
     )
-
+    end_time = datetime.now()
+    print(f"Time taken for Example 2: {end_time - start_time}")
+    start_time = datetime.now()
     # Example 3: Multi-Agent Sequential (uses Example 1 and 2 as subagents)
     create_agent(
         agent_name="Task Coordinator Sequential",
@@ -354,7 +525,9 @@ if __name__ == "__main__":
         sub_agents=["Sentiment Analyzer", "External Sentiment API"],
         pattern="sentiment_analyzer->external_sentiment_api"
     )
-
+    end_time = datetime.now()
+    print(f"Time taken for Example 3: {end_time - start_time}")
+    start_time = datetime.now()
     # Example 4: Multi-Agent Parallel (uses Example 1 and 2 as subagents)
     create_agent(
         agent_name="Task Coordinator Parallel",
@@ -367,7 +540,9 @@ if __name__ == "__main__":
         sub_agents=["Sentiment Analyzer", "External Sentiment API"],
         pattern="sentiment_analyzer, external_sentiment_api"
     )
-
+    end_time = datetime.now()
+    print(f"Time taken for Example 4: {end_time - start_time}")
+    start_time = datetime.now()
     # Example 5: Orchestrator Agent
     create_agent(
         agent_name="Orchestrator",
@@ -380,3 +555,21 @@ if __name__ == "__main__":
         sub_agents=["Sentiment Analyzer", "External Sentiment API"],
         is_orchestrator=True
     )
+    end_time = datetime.now()
+    print(f"Time taken for Example 5: {end_time - start_time}")
+    start_time = datetime.now()
+    # Example 6: Hybrid Pattern Agent
+    # Pattern: ((a2->a3->a4),(a5->a6->a7))->a8
+    # We'll use existing agents for demonstration, e.g., Sentiment Analyzer, External Sentiment API, and create temp names for others
+    create_agent(
+        agent_name="Hybrid Coordinator",
+        agent_inputs=["text"],
+        agent_description="Coordinates a hybrid workflow: two sequential groups in parallel, then a final agent.",
+        agent_instruction="Run two sequential groups in parallel, then pass results to a final agent.",
+        agent_tags=["coordination", "multi-agent", "workflow", "hybrid"],
+        agent_flag=None,
+        overwrite=True,
+        pattern="((sentiment_analyzer->external_sentiment_api->task_coordinator_sequential),(task_coordinator_parallel->external_sentiment_api->sentiment_analyzer))->orchestrator"
+    )
+    end_time = datetime.now()
+    print(f"Time taken for Example 6: {end_time - start_time}")
