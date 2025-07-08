@@ -135,8 +135,8 @@ def parse_pattern(pattern: str):
     pattern_clean = pattern.replace(' ', '')
     # Hybrid: more than one type of operator
     if any(op in pattern_clean for op in ['->', ',', '::']) and sum(op in pattern_clean for op in ['->', ',', '::']) > 1:
-        pattern_type = 'hybrid'
-        # For hybrid, just return the cleaned string for recursive parsing
+        pattern_type = 'complex'
+        # For complex, just return the cleaned string for recursive parsing
         structure = pattern_clean
     elif '->' in pattern_clean:
         pattern_type = 'sequential'
@@ -311,10 +311,10 @@ def create_agent(
     validate_inputs(agent_name, agent_inputs, agent_description, agent_instruction,
                    agent_tags, agent_url, sub_agents, agent_flag, pattern, tools, is_orchestrator)
     
-    # Hybrid pattern support
+    # Complex pattern support
     if pattern:
         pattern_type, _ = parse_pattern(pattern)
-        if pattern_type == 'hybrid':
+        if pattern_type == 'complex':
             # Recursively parse and build temp agents
             parsed = parse_pattern_recursive(pattern)
             temp_counter = count(1)
@@ -322,9 +322,9 @@ def create_agent(
             # Instead of creating files for temp agents, collect their definitions to be written in the top-level agent.py
             temp_agent_defs = []
             for temp_name, temp_type, temp_subs in temp_agents:
-                temp_desc = f"Temporary {temp_type} agent for hybrid pattern"
-                temp_instr = f"Auto-generated {temp_type} agent for hybrid pattern"
-                temp_tag = ["hybrid-temp"]
+                temp_desc = f"Temporary {temp_type} agent for complex pattern"
+                temp_instr = f"Auto-generated {temp_type} agent for complex pattern"
+                temp_tag = ["complex-temp"]
                 # Flatten subagent names
                 flat_subs = list(flatten(temp_subs))
                 sub_factories = ', '.join([f"create_{to_snake_case(sub)}()" for sub in flat_subs])
@@ -605,15 +605,15 @@ if __name__ == "__main__":
     end_time = datetime.now()
     print(f"Time taken for Example 5: {end_time - start_time}")
     start_time = datetime.now()
-    # Example 6: Hybrid Pattern Agent
+    # Example 6: Complex Pattern Agent
     # Pattern: ((a2->a3->a4),(a5->a6->a7))->a8
     # We'll use existing agents for demonstration, e.g., Sentiment Analyzer, External Sentiment API, and create temp names for others
     create_agent(
-        agent_name="Hybrid Coordinator",
+        agent_name="Complex Coordinator",
         agent_inputs=["text"],
-        agent_description="Coordinates a hybrid workflow: two sequential groups in parallel, then a final agent.",
+        agent_description="Coordinates a complex workflow: two sequential groups in parallel, then a final agent.",
         agent_instruction="Run two sequential groups in parallel, then pass results to a final agent.",
-        agent_tags=["coordination", "multi-agent", "workflow", "hybrid"],
+        agent_tags=["coordination", "multi-agent", "workflow", "complex"],
         agent_flag=None,
         overwrite=True,
         pattern="((sentiment_analyzer->external_sentiment_api->task_coordinator_sequential),(task_coordinator_parallel->external_sentiment_api->sentiment_analyzer))->orchestrator"
@@ -635,13 +635,13 @@ if __name__ == "__main__":
     print(f"Time taken for Example 7: {end_time - start_time}")
     start_time = datetime.now()
 
-    # --- Example: Hybrid with LoopAgent ---
+    # --- Example: Complex with LoopAgent ---
     create_agent(
-        agent_name="Hybrid Loop Agent",
+        agent_name="Complex Loop Agent",
         agent_inputs=["text"],
-        agent_description="Hybrid agent with sequential, loop, and parallel flows.",
+        agent_description="Complex agent with sequential, loop, and parallel flows.",
         agent_instruction="Mix of sequential, loop, and parallel.",
-        agent_tags=["hybrid", "loop", "test"],
+        agent_tags=["complex", "loop", "test"],
         pattern="agent1->agent2::agent3,agent4"
     )
     end_time = datetime.now()
