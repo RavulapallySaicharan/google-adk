@@ -6,7 +6,7 @@ import requests
 from google.adk import Agent
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools import FunctionTool
-from google.adk.agents import LlmAgent, SequentialAgent, ParallelAgent
+from google.adk.agents import LlmAgent, SequentialAgent, ParallelAgent, LoopAgent
 from itertools import count
 
 def to_snake_case(name: str) -> str:
@@ -132,35 +132,34 @@ def parse_pattern(pattern: str):
     """Parse the pattern string and return the pattern type and agent structure."""
     if not pattern or not isinstance(pattern, str):
         raise ValueError("pattern must be a non-empty string")
-    
-    # Remove whitespace for easier parsing
     pattern_clean = pattern.replace(' ', '')
-    if '->' in pattern_clean and ',' in pattern_clean:
-        # Hybrid pattern
+    # Hybrid: more than one type of operator
+    if any(op in pattern_clean for op in ['->', ',', '::']) and sum(op in pattern_clean for op in ['->', ',', '::']) > 1:
         pattern_type = 'hybrid'
-        # Split by '->' first, then by ',' within each segment
-        segments = pattern_clean.split('->')
-        structure = [seg.split(',') for seg in segments]
+        # For hybrid, just return the cleaned string for recursive parsing
+        structure = pattern_clean
     elif '->' in pattern_clean:
         pattern_type = 'sequential'
         structure = pattern_clean.split('->')
+    elif '::' in pattern_clean:
+        pattern_type = 'loop'
+        structure = pattern_clean.split('::')
     elif ',' in pattern_clean:
         pattern_type = 'parallel'
         structure = pattern_clean.split(',')
     else:
-        # Single agent (treat as sequential with one agent)
         pattern_type = 'sequential'
         structure = [pattern_clean]
     return pattern_type, structure
 
+# Enhanced recursive parser to support :: (loop), -> (sequential), , (parallel)
 def parse_pattern_recursive(pattern: str):
-    """Recursively parse a hybrid pattern string into a nested structure."""
     pattern = pattern.replace(' ', '')
     def helper(s, idx=0):
         result = []
         token = ''
         while idx < len(s):
-            if s[idx] == '(':
+            if s[idx] == '(':  # group
                 group, idx = helper(s, idx + 1)
                 result.append(group)
             elif s[idx] == ')':
@@ -168,17 +167,23 @@ def parse_pattern_recursive(pattern: str):
                     result.append(token)
                     token = ''
                 return result, idx + 1
-            elif s[idx] == ',':
-                if token:
-                    result.append(token)
-                    token = ''
-                idx += 1
             elif s[idx:idx+2] == '->':
                 if token:
                     result.append(token)
                     token = ''
                 result.append('->')
                 idx += 2
+            elif s[idx:idx+2] == '::':
+                if token:
+                    result.append(token)
+                    token = ''
+                result.append('::')
+                idx += 2
+            elif s[idx] == ',':
+                if token:
+                    result.append(token)
+                    token = ''
+                idx += 1
             else:
                 token += s[idx]
                 idx += 1
@@ -188,17 +193,46 @@ def parse_pattern_recursive(pattern: str):
     parsed, _ = helper(pattern)
     return parsed
 
+# Utility to flatten nested lists (for subagent names)
+def flatten(l):
+    for el in l:
+        if isinstance(el, list):
+            yield from flatten(el)
+        else:
+            yield el
+
+# Modular workflow builder with LoopAgent support
 def build_agent_from_pattern(parsed, agent_inputs, agent_description, agent_instruction, agent_tags, overwrite, temp_counter, parent_type=None):
-    """
-    Recursively build agents from the parsed pattern.
-    Returns the name of the top-level agent and a list of all temp agent definitions (tuples of (name, type, subagents)).
-    """
     temp_agents = []
     if isinstance(parsed, str):
         return parsed, temp_agents
-    # If it's a list, check for '->' to determine sequential/parallel
-    if '->' in parsed:
-        # Sequential: split by '->', recursively build each part
+    # Check for loop, sequential, parallel
+    if '::' in parsed:
+        # Loop: split by '::', recursively build each part
+        parts = []
+        current = []
+        for item in parsed:
+            if item == '::':
+                if current:
+                    parts.append(current)
+                    current = []
+            else:
+                current.append(item)
+        if current:
+            parts.append(current)
+        subagent_names = []
+        for part in parts:
+            if len(part) == 1 and isinstance(part[0], str):
+                sub_name, sub_temps = build_agent_from_pattern(part[0], agent_inputs, agent_description, agent_instruction, agent_tags, overwrite, temp_counter, parent_type='loop')
+            else:
+                sub_name, sub_temps = build_agent_from_pattern(part, agent_inputs, agent_description, agent_instruction, agent_tags, overwrite, temp_counter, parent_type='loop')
+            subagent_names.append(sub_name)
+            temp_agents.extend(sub_temps)
+        temp_name = f"_tmp_loop{next(temp_counter)}"
+        temp_agents.append((temp_name, 'loop', subagent_names))
+        return temp_name, temp_agents
+    elif '->' in parsed:
+        # Sequential
         parts = []
         current = []
         for item in parsed:
@@ -212,7 +246,6 @@ def build_agent_from_pattern(parsed, agent_inputs, agent_description, agent_inst
             parts.append(current)
         subagent_names = []
         for part in parts:
-            # If part is a single string, pass as is
             if len(part) == 1 and isinstance(part[0], str):
                 sub_name, sub_temps = build_agent_from_pattern(part[0], agent_inputs, agent_description, agent_instruction, agent_tags, overwrite, temp_counter, parent_type='sequential')
             else:
@@ -222,8 +255,8 @@ def build_agent_from_pattern(parsed, agent_inputs, agent_description, agent_inst
         temp_name = f"_tmp_seq{next(temp_counter)}"
         temp_agents.append((temp_name, 'sequential', subagent_names))
         return temp_name, temp_agents
-    else:
-        # Parallel: each item is a subagent or group
+    elif ',' in parsed:
+        # Parallel
         subagent_names = []
         for item in parsed:
             if isinstance(item, str):
@@ -235,6 +268,11 @@ def build_agent_from_pattern(parsed, agent_inputs, agent_description, agent_inst
         temp_name = f"_tmp_par{next(temp_counter)}"
         temp_agents.append((temp_name, 'parallel', subagent_names))
         return temp_name, temp_agents
+    else:
+        # Single agent
+        if isinstance(parsed, list) and len(parsed) == 1:
+            return build_agent_from_pattern(parsed[0], agent_inputs, agent_description, agent_instruction, agent_tags, overwrite, temp_counter, parent_type)
+        return parsed, temp_agents
 
 def create_agent(
     agent_name: str,
@@ -287,12 +325,17 @@ def create_agent(
                 temp_desc = f"Temporary {temp_type} agent for hybrid pattern"
                 temp_instr = f"Auto-generated {temp_type} agent for hybrid pattern"
                 temp_tag = ["hybrid-temp"]
-                # Generate the factory function for the temp agent as a string
-                sub_factories = ', '.join([f"create_{to_snake_case(sub)}()" for sub in temp_subs])
+                # Flatten subagent names
+                flat_subs = list(flatten(temp_subs))
+                sub_factories = ', '.join([f"create_{to_snake_case(sub)}()" for sub in flat_subs])
                 if temp_type == 'sequential':
                     agent_class = 'SequentialAgent'
-                else:
+                elif temp_type == 'parallel':
                     agent_class = 'ParallelAgent'
+                elif temp_type == 'loop':
+                    agent_class = 'LoopAgent'
+                else:
+                    agent_class = 'Agent'
                 temp_factory = f"def create_{to_snake_case(temp_name)}():\n" \
                               f"    \"\"\"Factory for {temp_name}\"\"\"\n" \
                               f"    return {agent_class}(\n" \
@@ -318,7 +361,7 @@ def create_agent(
             lines = []
             lines.append("from google.adk import Agent")
             lines.append("from google.adk.models.lite_llm import LiteLlm")
-            lines.append("from google.adk.agents import SequentialAgent, ParallelAgent")
+            lines.append("from google.adk.agents import SequentialAgent, ParallelAgent, LoopAgent")
             lines.append("")
             # Write all temp agent factories
             for temp_factory in temp_agent_defs:
@@ -408,6 +451,8 @@ def create_agent(
             lines.append("from google.adk.agents import SequentialAgent")
         elif pattern_type == 'parallel':
             lines.append("from google.adk.agents import ParallelAgent")
+        elif pattern_type == 'loop':
+            lines.append("from google.adk.agents import LoopAgent")
         else:
             lines.append("from google.adk.agents import LlmAgent")
     lines.append("")
@@ -429,6 +474,8 @@ def create_agent(
         agent_class = 'SequentialAgent'
     elif pattern_type == 'parallel':
         agent_class = 'ParallelAgent'
+    elif pattern_type == 'loop':
+        agent_class = 'LoopAgent'
     else:
         agent_class = 'Agent'
     lines.append(f"    return {agent_class}(")
@@ -573,3 +620,44 @@ if __name__ == "__main__":
     )
     end_time = datetime.now()
     print(f"Time taken for Example 6: {end_time - start_time}")
+
+    # --- Example: LoopAgent Only ---
+    start_time = datetime.now()
+    create_agent(
+        agent_name="Loop Only Agent",
+        agent_inputs=["text"],
+        agent_description="A loop agent with two subagents.",
+        agent_instruction="Loop over AgentX and AgentY.",
+        agent_tags=["loop", "test"],
+        pattern="agent_x::agent_y"
+    )
+    end_time = datetime.now()
+    print(f"Time taken for Example 7: {end_time - start_time}")
+    start_time = datetime.now()
+
+    # --- Example: Hybrid with LoopAgent ---
+    create_agent(
+        agent_name="Hybrid Loop Agent",
+        agent_inputs=["text"],
+        agent_description="Hybrid agent with sequential, loop, and parallel flows.",
+        agent_instruction="Mix of sequential, loop, and parallel.",
+        agent_tags=["hybrid", "loop", "test"],
+        pattern="agent1->agent2::agent3,agent4"
+    )
+    end_time = datetime.now()
+    print(f"Time taken for Example 8: {end_time - start_time}")
+    start_time = datetime.now()
+
+    # --- Example: Nested Loops ---
+    create_agent(
+        agent_name="Nested Loop Agent",
+        agent_inputs=["text"],
+        agent_description="Nested loop agent.",
+        agent_instruction="Nested looping.",
+        agent_tags=["loop", "nested", "test"],
+        pattern="agenta::agentb::agentc"
+    )
+    end_time = datetime.now()
+    print(f"Time taken for Example 9: {end_time - start_time}")
+    start_time = datetime.now()
+
