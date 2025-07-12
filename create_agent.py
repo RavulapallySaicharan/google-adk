@@ -739,3 +739,43 @@ if __name__ == "__main__":
     )
     end_time = datetime.now()
     print(f"Time taken for Complex Workflow: {end_time - start_time}")
+
+    # Example 5: External Pricing API Agent (simulates external data fetch for NAV)
+    start_time = datetime.now()
+    create_agent(
+        agent_name="External Pricing API Agent",
+        agent_inputs=["security_ids"],
+        agent_description="Fetches real-time security prices from an external pricing API for NAV calculation.",
+        agent_instruction="Call the external pricing API and return the latest prices for the given securities.",
+        agent_tags=["external", "pricing", "API", "NAV", "finance"],
+        agent_url="http://external.pricing.api/prices",  # Simulated endpoint
+        overwrite=True
+    )
+    end_time = datetime.now()
+    print(f"Time taken for External Pricing API Agent: {end_time - start_time}")
+
+    # Example 6: Orchestrator Agent - Dynamic Task Routing
+    # The Orchestrator can choose which subagent(s) to invoke based on input or workflow state
+    start_time = datetime.now()
+    create_agent(
+        agent_name="Finance Orchestrator Agent",
+        agent_inputs=["task_type", "input_data"],
+        agent_description="Orchestrates finance operations by dynamically routing tasks to the appropriate agent (e.g., compliance, settlement, NAV, reporting, pricing).",
+        agent_instruction="Based on the task_type, invoke the relevant subagent(s) to process input_data. For NAV calculation, fetch prices using the External Pricing API Agent.",
+        agent_tags=["orchestrator", "dynamic", "routing", "finance"],
+        sub_agents=[
+            "Trade Capture Agent",
+            "Compliance Check Agent",
+            "Trade Settlement Agent",
+            "Reporting Agent",
+            "Asset Servicing Agent",
+            "NAV Calculation Agent",
+            "Reconciliation Agent",
+            "Fund Accounting Agent",
+            "External Pricing API Agent"
+        ],
+        is_orchestrator=True,
+        overwrite=True
+    )
+    end_time = datetime.now()
+    print(f"Time taken for Orchestrator Agent: {end_time - start_time}")
