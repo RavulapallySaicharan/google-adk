@@ -526,138 +526,216 @@ def create_agent(
     with open(agent_file, "w") as f:
         f.write("\n".join(lines))
 
+    # --- Generate FastAPI-based a2a_server.py ---
+    a2a_lines = []
+    a2a_lines.append("from fastapi import FastAPI, Request")
+    a2a_lines.append("from fastapi.responses import JSONResponse")
+    a2a_lines.append("import uvicorn")
+    a2a_lines.append("import uuid")
+    a2a_lines.append("from pathlib import Path")
+    a2a_lines.append(f"from .agent import {factory_name}")
+    a2a_lines.append("")
+    a2a_lines.append("app = FastAPI(title=\"A2A Agent Server\")")
+    a2a_lines.append("")
+    # Agent card (minimal, can be extended)
+    a2a_lines.append("AGENT_CARD = {")
+    a2a_lines.append(f"    'name': '{to_snake_case(agent_name)}',")
+    a2a_lines.append(f"    'description': '{agent_description}',")
+    a2a_lines.append(f"    'url': 'http://localhost:8000',  # Update as needed")
+    a2a_lines.append(f"    'version': '1.0.0',")
+    a2a_lines.append("    'capabilities': { 'streaming': False, 'pushNotifications': False },")
+    a2a_lines.append("    'defaultInputModes': ['text'],")
+    a2a_lines.append("    'defaultOutputModes': ['text'],")
+    a2a_lines.append("    'skills': [")
+    a2a_lines.append("        {")
+    a2a_lines.append(f"            'id': '{to_snake_case(agent_name)}_main',")
+    a2a_lines.append(f"            'name': '{agent_name}',")
+    a2a_lines.append(f"            'description': '{agent_description}',")
+    a2a_lines.append(f"            'tags': {agent_tags},")
+    a2a_lines.append(f"            'examples': ['Say hello']")
+    a2a_lines.append("        }")
+    a2a_lines.append("    ]")
+    a2a_lines.append("}")
+    a2a_lines.append("")
+    a2a_lines.append("@app.get('/.well-known/agent.json')")
+    a2a_lines.append("async def get_agent_card():")
+    a2a_lines.append("    return JSONResponse(AGENT_CARD)")
+    a2a_lines.append("")
+    a2a_lines.append("@app.post('/tasks/send')")
+    a2a_lines.append("async def handle_task(request: Request):")
+    a2a_lines.append("    data = await request.json()")
+    a2a_lines.append("    task_id = data.get('id', str(uuid.uuid4()))")
+    a2a_lines.append("    user_message = ''")
+    a2a_lines.append("    try:")
+    a2a_lines.append("        user_message = data['message']['parts'][0].get('text', '')")
+    a2a_lines.append("    except Exception:")
+    a2a_lines.append("        pass")
+    a2a_lines.append(f"    agent = {factory_name}()")
+    a2a_lines.append("    # TODO: Replace with actual agent logic. For now, echo the user message.")
+    a2a_lines.append("    agent_reply = f'Agent received: {user_message}'")
+    a2a_lines.append("    response = {")
+    a2a_lines.append("        'id': task_id,")
+    a2a_lines.append("        'status': {'state': 'completed'},")
+    a2a_lines.append("        'messages': [")
+    a2a_lines.append("            data.get('message', {}),")
+    a2a_lines.append("            {")
+    a2a_lines.append("                'role': 'agent',")
+    a2a_lines.append("                'parts': [{'text': agent_reply}]\n            }")
+    a2a_lines.append("        ]")
+    a2a_lines.append("    }")
+    a2a_lines.append("    return JSONResponse(response)")
+    a2a_lines.append("")
+    a2a_lines.append("if __name__ == '__main__':")
+    a2a_lines.append("    uvicorn.run(app, host='0.0.0.0', port=8000)")
+
+    a2a_file = agent_dir / "a2a_server.py"
+    with open(a2a_file, "w") as f:
+        f.write("\n".join(a2a_lines))
+
 if __name__ == "__main__":
     from datetime import datetime
-    
-    start_time = datetime.now()
-    # Example 1: LLM Agent
-    create_agent(
-        agent_name="Sentiment Analyzer",
-        agent_inputs=["text"],
-        agent_description="Analyzes text to determine sentiment and emotional tone",
-        agent_instruction="Provide accurate sentiment analysis and emotional insights from text",
-        agent_tags=["nlp", "sentiment-analysis", "emotion-detection"],
-        agent_flag=None,
-        overwrite=True,
-        agent_url=None,
-        sub_agents=None
-    )
-    end_time = datetime.now()
-    print(f"Time taken for Example 1: {end_time - start_time}")
-    start_time = datetime.now()
-    # Example 2: External Agent
-    create_agent(
-        agent_name="External Sentiment API",
-        agent_inputs=["text"],
-        agent_description="Calls external API for sentiment analysis",
-        agent_instruction="Process text and call external API for sentiment analysis",
-        agent_tags=["api", "sentiment", "external"],
-        agent_flag=None,
-        overwrite=True,
-        agent_url="http://external.api/sentiment",
-        sub_agents=None
-    )
-    end_time = datetime.now()
-    print(f"Time taken for Example 2: {end_time - start_time}")
-    start_time = datetime.now()
-    # Example 3: Multi-Agent Sequential (uses Example 1 and 2 as subagents)
-    create_agent(
-        agent_name="Task Coordinator Sequential",
-        agent_inputs=["text"],
-        agent_description="Coordinates Sentiment Analyzer and External Sentiment API sequentially",
-        agent_instruction="First analyze sentiment, then call external API for further analysis.",
-        agent_tags=["coordination", "multi-agent", "workflow", "sequential"],
-        agent_flag=None,
-        overwrite=True,
-        sub_agents=["Sentiment Analyzer", "External Sentiment API"],
-        pattern="sentiment_analyzer->external_sentiment_api"
-    )
-    end_time = datetime.now()
-    print(f"Time taken for Example 3: {end_time - start_time}")
-    start_time = datetime.now()
-    # Example 4: Multi-Agent Parallel (uses Example 1 and 2 as subagents)
-    create_agent(
-        agent_name="Task Coordinator Parallel",
-        agent_inputs=["text"],
-        agent_description="Coordinates Sentiment Analyzer and External Sentiment API in parallel",
-        agent_instruction="Analyze sentiment using both internal and external APIs in parallel.",
-        agent_tags=["coordination", "multi-agent", "workflow", "parallel"],
-        agent_flag=None,
-        overwrite=True,
-        sub_agents=["Sentiment Analyzer", "External Sentiment API"],
-        pattern="sentiment_analyzer, external_sentiment_api"
-    )
-    end_time = datetime.now()
-    print(f"Time taken for Example 4: {end_time - start_time}")
-    start_time = datetime.now()
-    # Example 5: Orchestrator Agent
-    create_agent(
-        agent_name="Orchestrator",
-        agent_inputs=["text"],
-        agent_description="Orchestrates the execution of multiple agents",
-        agent_instruction="Manage and coordinate sub-agents to complete tasks efficiently",
-        agent_tags=["coordination", "multi-agent", "workflow", "orchestrator"],
-        agent_flag=None,
-        overwrite=True,
-        sub_agents=["Sentiment Analyzer", "External Sentiment API"],
-        is_orchestrator=True
-    )
-    end_time = datetime.now()
-    print(f"Time taken for Example 5: {end_time - start_time}")
-    start_time = datetime.now()
-    # Example 6: Complex Pattern Agent
-    # Pattern: ((a2->a3->a4),(a5->a6->a7))->a8
-    # We'll use existing agents for demonstration, e.g., Sentiment Analyzer, External Sentiment API, and create temp names for others
-    create_agent(
-        agent_name="Complex Coordinator",
-        agent_inputs=["text"],
-        agent_description="Coordinates a complex workflow: two sequential groups in parallel, then a final agent.",
-        agent_instruction="Run two sequential groups in parallel, then pass results to a final agent.",
-        agent_tags=["coordination", "multi-agent", "workflow", "complex"],
-        agent_flag=None,
-        overwrite=True,
-        pattern="((sentiment_analyzer->external_sentiment_api->task_coordinator_sequential),(task_coordinator_parallel->external_sentiment_api->sentiment_analyzer))->orchestrator"
-    )
-    end_time = datetime.now()
-    print(f"Time taken for Example 6: {end_time - start_time}")
 
-    # --- Example: LoopAgent Only ---
+    # --- Finance Domain Multi-Agent Workflow Examples for State Street ---
+
+    # Example 1: Sequential Workflow - Trade Settlement Process
+    # TradeCapture -> ComplianceCheck -> TradeSettlement -> Reporting
     start_time = datetime.now()
     create_agent(
-        agent_name="Loop Only Agent",
-        agent_inputs=["text"],
-        agent_description="A loop agent with two subagents.",
-        agent_instruction="Loop over AgentX and AgentY.",
-        agent_tags=["loop", "test"],
-        pattern="agent_x::agent_y"
+        agent_name="Trade Capture Agent",
+        agent_inputs=["trade_data"],
+        agent_description="Captures and validates incoming trade data for further processing.",
+        agent_instruction="Ingest trade data and perform initial validation.",
+        agent_tags=["trade", "capture", "finance"],
+        overwrite=True
     )
-    end_time = datetime.now()
-    print(f"Time taken for Example 7: {end_time - start_time}")
-    start_time = datetime.now()
-
-    # --- Example: Complex with LoopAgent ---
     create_agent(
-        agent_name="Complex Loop Agent",
-        agent_inputs=["text"],
-        agent_description="Complex agent with sequential, loop, and parallel flows.",
-        agent_instruction="Mix of sequential, loop, and parallel.",
-        agent_tags=["complex", "loop", "test"],
-        pattern="agent1->agent2::agent3,agent4"
+        agent_name="Compliance Check Agent",
+        agent_inputs=["trade_data"],
+        agent_description="Performs compliance checks on trade data to ensure regulatory adherence.",
+        agent_instruction="Check trade data for compliance with internal and external regulations.",
+        agent_tags=["compliance", "check", "finance"],
+        overwrite=True
     )
-    end_time = datetime.now()
-    print(f"Time taken for Example 8: {end_time - start_time}")
-    start_time = datetime.now()
-
-    # --- Example: Nested Loops ---
     create_agent(
-        agent_name="Nested Loop Agent",
-        agent_inputs=["text"],
-        agent_description="Nested loop agent.",
-        agent_instruction="Nested looping.",
-        agent_tags=["loop", "nested", "test"],
-        pattern="agenta::agentb::agentc"
+        agent_name="Trade Settlement Agent",
+        agent_inputs=["trade_data"],
+        agent_description="Handles the settlement of trades, ensuring proper transfer of securities and cash.",
+        agent_instruction="Settle trades by coordinating with counterparties and clearing systems.",
+        agent_tags=["settlement", "trade", "finance"],
+        overwrite=True
+    )
+    create_agent(
+        agent_name="Reporting Agent",
+        agent_inputs=["settlement_data"],
+        agent_description="Generates regulatory and client reports post-settlement.",
+        agent_instruction="Produce and distribute settlement and compliance reports.",
+        agent_tags=["reporting", "regulatory", "finance"],
+        overwrite=True
+    )
+    create_agent(
+        agent_name="Trade Settlement Workflow",
+        agent_inputs=["trade_data"],
+        agent_description="Sequential workflow for trade capture, compliance, settlement, and reporting.",
+        agent_instruction="Process trades through capture, compliance, settlement, and reporting steps.",
+        agent_tags=["workflow", "sequential", "trade", "finance"],
+        sub_agents=[
+            "Trade Capture Agent",
+            "Compliance Check Agent",
+            "Trade Settlement Agent",
+            "Reporting Agent"
+        ],
+        pattern="trade_capture_agent->compliance_check_agent->trade_settlement_agent->reporting_agent"
     )
     end_time = datetime.now()
-    print(f"Time taken for Example 9: {end_time - start_time}")
-    start_time = datetime.now()
+    print(f"Time taken for Sequential Workflow: {end_time - start_time}")
 
+    # Example 2: Parallel Workflow - Asset Servicing and NAV Calculation
+    # AssetServicing and NAVCalculation run in parallel, then results are reconciled
+    start_time = datetime.now()
+    create_agent(
+        agent_name="Asset Servicing Agent",
+        agent_inputs=["asset_events"],
+        agent_description="Processes corporate actions, dividends, and other asset servicing events.",
+        agent_instruction="Handle all asset servicing events and update records accordingly.",
+        agent_tags=["asset", "servicing", "finance"],
+        overwrite=True
+    )
+    create_agent(
+        agent_name="NAV Calculation Agent",
+        agent_inputs=["fund_data"],
+        agent_description="Calculates Net Asset Value (NAV) for funds based on latest market and asset data.",
+        agent_instruction="Compute NAV using validated fund and market data.",
+        agent_tags=["NAV", "calculation", "fund", "finance"],
+        overwrite=True
+    )
+    create_agent(
+        agent_name="Reconciliation Agent",
+        agent_inputs=["servicing_data", "nav_data"],
+        agent_description="Reconciles asset servicing and NAV calculation results for consistency.",
+        agent_instruction="Compare and reconcile outputs from asset servicing and NAV calculation.",
+        agent_tags=["reconciliation", "finance"],
+        overwrite=True
+    )
+    create_agent(
+        agent_name="Asset Servicing & NAV Workflow",
+        agent_inputs=["asset_events", "fund_data"],
+        agent_description="Parallel workflow for asset servicing and NAV calculation, followed by reconciliation.",
+        agent_instruction="Process asset servicing and NAV calculation in parallel, then reconcile results.",
+        agent_tags=["workflow", "parallel", "asset", "NAV", "finance"],
+        sub_agents=[
+            "Asset Servicing Agent",
+            "NAV Calculation Agent",
+            "Reconciliation Agent"
+        ],
+        pattern="asset_servicing_agent,nav_calculation_agent->reconciliation_agent"
+    )
+    end_time = datetime.now()
+    print(f"Time taken for Parallel Workflow: {end_time - start_time}")
+
+    # Example 3: Loop Workflow - Daily Compliance Checks
+    # ComplianceCheck <-> Reporting (loop until all issues resolved)
+    start_time = datetime.now()
+    create_agent(
+        agent_name="Daily Compliance Loop Workflow",
+        agent_inputs=["trade_data"],
+        agent_description="Loop workflow for daily compliance checks and reporting until all issues are resolved.",
+        agent_instruction="Iterate between compliance checks and reporting until no compliance issues remain.",
+        agent_tags=["workflow", "loop", "compliance", "reporting", "finance"],
+        sub_agents=[
+            "Compliance Check Agent",
+            "Reporting Agent"
+        ],
+        pattern="compliance_check_agent::reporting_agent"
+    )
+    end_time = datetime.now()
+    print(f"Time taken for Loop Workflow: {end_time - start_time}")
+
+    # Example 4: Complex Workflow - Fund Accounting End-to-End
+    # TradeCapture -> (AssetServicing, NAVCalculation) -> Reconciliation -> FundAccounting -> Reporting
+    start_time = datetime.now()
+    create_agent(
+        agent_name="Fund Accounting Agent",
+        agent_inputs=["reconciled_data"],
+        agent_description="Performs fund accounting based on reconciled asset and NAV data.",
+        agent_instruction="Execute fund accounting tasks and prepare final figures for reporting.",
+        agent_tags=["fund", "accounting", "finance"],
+        overwrite=True
+    )
+    create_agent(
+        agent_name="Fund Accounting Workflow",
+        agent_inputs=["trade_data", "asset_events", "fund_data"],
+        agent_description="Complex workflow for end-to-end fund accounting, combining sequential, parallel, and reconciliation steps.",
+        agent_instruction="Capture trades, process asset servicing and NAV in parallel, reconcile, perform fund accounting, and report.",
+        agent_tags=["workflow", "complex", "fund", "accounting", "finance"],
+        sub_agents=[
+            "Trade Capture Agent",
+            "Asset Servicing Agent",
+            "NAV Calculation Agent",
+            "Reconciliation Agent",
+            "Fund Accounting Agent",
+            "Reporting Agent"
+        ],
+        pattern="trade_capture_agent->(asset_servicing_agent,nav_calculation_agent)->reconciliation_agent->fund_accounting_agent->reporting_agent"
+    )
+    end_time = datetime.now()
+    print(f"Time taken for Complex Workflow: {end_time - start_time}")
