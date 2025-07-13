@@ -1,0 +1,4 @@
+task_type,input_data_file
+NAV_CALCULATION,fund_data.csv
+TRADE_SETTLEMENT,trade_data.csv
+PRICING,security_ids.csv 

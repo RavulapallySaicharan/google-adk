@@ -1,0 +1,43 @@
+# Trade Capture Agent
+Input: Please capture the following trade: Trade ID T001, Security SEC123, Date 2024-06-01, Quantity 100, Price 50.25, Counterparty CP_A, Type BUY.
+
+# Compliance Check Agent
+Input: Can you perform a compliance check on trade T002 for security SEC456, traded on 2024-06-01, quantity 200, price 75.10, counterparty CP_B, type SELL?
+
+# Trade Settlement Agent
+Input: Settle trade T001 for security SEC123, quantity 100, price 50.25, with counterparty CP_A.
+
+# Reporting Agent
+Input: Generate a settlement report for settlement S001 related to trade T001, settled on 2024-06-03.
+
+# Asset Servicing Agent
+Input: Process the following asset event: Event ID AE001, Security SEC123, Type Dividend, Date 2024-06-01, Amount 1.25.
+
+# NAV Calculation Agent
+Input: Calculate the NAV for fund F001 as of 2024-06-01, with total assets 1,000,000, liabilities 200,000, and 8,000 shares outstanding.
+
+# Reconciliation Agent
+Input: Reconcile servicing data for event AE001 and NAV data for fund F001 on 2024-06-01.
+
+# Fund Accounting Agent
+Input: Perform fund accounting for fund F001 on 2024-06-01 using reconciled data R001.
+
+# External Pricing API Agent
+Input: Fetch the latest prices for securities SEC123, SEC456, and SEC789.
+
+# Finance Orchestrator Agent
+Input: Please route a NAV calculation task for fund F001 using the provided fund data.
+Input: Please perform trade settlement for trade T002 using the provided trade data.
+Input: Get pricing information for security SEC789.
+
+# Daily Compliance Loop Workflow
+Input: Start a daily compliance check loop for trade T001 and generate a report until all issues are resolved.
+
+# Asset Servicing & NAV Workflow
+Input: Process asset servicing for event AE002 and calculate NAV for fund F002, then reconcile the results.
+
+# Trade Settlement Workflow
+Input: Execute the full trade settlement workflow for trade T001, including capture, compliance, settlement, and reporting.
+
+# Fund Accounting Workflow
+Input: Run the end-to-end fund accounting workflow for trade T001, asset event AE001, and fund F001, including reconciliation and reporting. 

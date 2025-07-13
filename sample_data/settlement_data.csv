@@ -1,0 +1,3 @@
+settlement_id,trade_id,settlement_date,status,amount
+S001,T001,2024-06-03,Settled,5025.00
+S002,T002,2024-06-03,Pending,15020.00 

@@ -1,0 +1,3 @@
+reconciliation_id,fund_id,date,status,notes
+R001,F001,2024-06-01,Matched,All records matched
+R002,F002,2024-06-01,Unmatched,NAV discrepancy 

@@ -1,0 +1,3 @@
+event_id,security_id,event_type,event_date,amount
+AE001,SEC123,Dividend,2024-06-01,1.25
+AE002,SEC789,Split,2024-06-02,0 
